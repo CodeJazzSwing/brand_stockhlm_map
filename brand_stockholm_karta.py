@@ -10,29 +10,33 @@ import numpy as np
 import plotly.graph_objects as go
 import matplotlib.ticker as ticker
 
-df = pd.read_csv(r'YOUR_PATH_FILE', sep=';')
+DATA_FILE = r'PATH_TO_DATA_FILE'
+DATE_TIME = 'Tidpunkt_'
+TARGET_COLUMN = 'Typ av brand'
 
-#Stockholm stad logo
+df = pd.read_csv(DATA_FILE, sep=';')
+
+# Stockholm stad logo
 image = 'StockholmsStad_logotypeStandardA3_300ppi_svart.png'
 
-# Convert 'Tidpunkt_' to datetime
-df['Tidpunkt_'] = pd.to_datetime(df['Tidpunkt_'])
+# Convert DATE_TIME column from int64 to datetime object
+df[DATE_TIME] = pd.to_datetime(df[DATE_TIME], format='%Y%m%d')
 
 #---------SIDEBAR-------------
 
 st.sidebar.header('Filter Here:')
 
 # Date range filter
-start_date = st.sidebar.date_input('Startdatum', df['Tidpunkt_'].min().date())
-end_date = st.sidebar.date_input('Slutdatum', df['Tidpunkt_'].max().date())
+start_date = st.sidebar.date_input('Startdatum', df[DATE_TIME].min().date())
+end_date = st.sidebar.date_input('Slutdatum', df[DATE_TIME].max().date())
 
-#Error message for date
+# Error message for date
 if start_date > end_date:
     st.sidebar.error('Misstag: Slutdatum måste vara efter startdatum.')
 
 
 # Filter the DF based on the sidebar selection
-df_selection = df[(df['Tidpunkt_'].dt.date >= start_date) & (df['Tidpunkt_'].dt.date <= end_date)]
+df_selection = df[(df[DATE_TIME].dt.date >= start_date) & (df[DATE_TIME].dt.date <= end_date)]
 
 
 # Create a new layout with 2 columns
@@ -42,9 +46,13 @@ col1, col2 = st.columns(2)
 col1.image(image, use_column_width=True)
 
 
-#Create color dictionary för column "Typ of brand" categories
+# Create color dictionary för column "Typ of brand" categories
 color_dict = {"Brand i byggnad" : "red", "Brand i container" : "blue", "Fordonsbrand" : "green", "Mark-/skogsbrand" : "orange", "Övrigt" : "purple"}
-categories = df_selection['Typ av brand'].unique()
+try:
+    categories = df_selection[TARGET_COLUMN].unique()
+except KeyError as e:
+    print(f"Column, {TARGET_COLUMN}, is not in dataframe. Choose a column that is in the dataframe or check your datafile for the correct column.\n {e}")
+    raise
 colors = [color_dict[cat] for cat in categories]
 
 
@@ -56,9 +64,9 @@ fig = px.scatter_mapbox(df_selection,
                         width = 1000,
                         height= 1000,
                         title = 'Bränder i Stockholm stad',
-                        text = df_selection['Typ av brand'],
-                        hover_data = {'Typ av brand': True, 'Tidpunkt_': True, 'lng': False, 'lat': False},
-                        color = df_selection["Typ av brand"],
+                        text = df_selection[TARGET_COLUMN],
+                        hover_data = {TARGET_COLUMN: True, DATE_TIME: True, 'lng': False, 'lat': False},
+                        color = df_selection[TARGET_COLUMN],
                         color_discrete_sequence = colors
                         )
 
@@ -73,17 +81,17 @@ st.plotly_chart(fig)
 
 
 #_______________________LINE GRAPH___________________________
-df_selection_grouped = df_selection.groupby(['Tidpunkt_', 'Typ av brand']).size().reset_index(name='counts')
+df_selection_grouped = df_selection.groupby([DATE_TIME, TARGET_COLUMN]).size().reset_index(name='counts')
 
 # Get fire types and time points
-fire_types = df_selection_grouped['Typ av brand'].unique()
-time_points = df_selection_grouped['Tidpunkt_'].unique()
+fire_types = df_selection_grouped[TARGET_COLUMN].unique()
+time_points = df_selection_grouped[DATE_TIME].unique()
 
 # Create a DF with all combinations of time and fire
-df_all_combinations = pd.DataFrame(index=pd.MultiIndex.from_product([time_points, fire_types], names=['Tidpunkt_', 'Typ av brand'])).reset_index()
+df_all_combinations = pd.DataFrame(index=pd.MultiIndex.from_product([time_points, fire_types], names=[DATE_TIME, TARGET_COLUMN])).reset_index()
 
 # Merge the original DF with the DF that has all combinations
-df_merged = pd.merge(df_all_combinations, df_selection_grouped, on=['Tidpunkt_', 'Typ av brand'], how='left')
+df_merged = pd.merge(df_all_combinations, df_selection_grouped, on=[DATE_TIME, TARGET_COLUMN], how='left')
 
 # Fill NA values with 0
 df_merged['counts'] = df_merged['counts'].fillna(0)
@@ -97,7 +105,7 @@ width = 0.1
 # Generate bars for each fire type
 for i, fire_type in enumerate(fire_types):
     # Filter the data for the current fire type
-    df_fire_type = df_merged[df_merged['Typ av brand'] == fire_type]
+    df_fire_type = df_merged[df_merged[TARGET_COLUMN] == fire_type]
     
     # Create an array for the position of each bar on the x-axis
     r = np.arange(len(time_points))
@@ -107,7 +115,7 @@ for i, fire_type in enumerate(fire_types):
 
 # Set the title and labels
 ax.set_title('Bränder i Stockholm stad')
-ax.set_xlabel('Tidpunkt')
+ax.set_xlabel(DATE_TIME)
 ax.set_ylabel('Antal bränder')
 
 # Add xticks on the middle of the group bars
@@ -134,10 +142,10 @@ fig = go.Figure(go.Scattermapbox(
     mode = 'markers',
     marker = go.scattermapbox.Marker(
         size = 12,
-        color = df_selection["Typ av brand"].map(color_dict),
+        color = df_selection[TARGET_COLUMN].map(color_dict),
         colorscale = colors
     ),
-    text = df_selection['Typ av brand'],
+    text = df_selection[TARGET_COLUMN],
 ))
 
 # Calculate the Convex Hull of the points
